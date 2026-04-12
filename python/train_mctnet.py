@@ -1,22 +1,3 @@
-"""
-Training script for MCTNet on the processed crop datasets (.npz + .json).
-
-Expected inputs:
-  - dataset .npz produced by build_mctnet_dataset.py
-  - metadata .json produced by build_mctnet_dataset.py
-
-Paper-driven defaults:
-  - n_stage = 3
-  - n_head = 5
-  - kernel_size = 3
-  - learning_rate = 0.001
-  - optimizer = Adam
-
-Implementation choices:
-  - batch_size defaults to 32
-  - early stopping on validation kappa
-  - checkpointing of the best validation model
-"""
 
 from __future__ import annotations
 

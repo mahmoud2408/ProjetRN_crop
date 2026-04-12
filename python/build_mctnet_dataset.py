@@ -1,20 +1,4 @@
-"""
-Build the MCTNet-ready dataset from Google Earth Engine CSV exports.
 
-Paper-driven settings:
-  - 36 temporal observations
-  - 10 Sentinel-2 spectral bands
-  - Missing values kept as 0
-  - Randomly sampled 10,000 points per state
-  - Classes under 5% merged to "others"
-  - 300 samples per final class for train+val, split 8:2
-
-Implementation choices:
-  - Reflectance is optionally scaled from Sentinel-2 SR integers to [0, 1]
-    by dividing by 10000.
-  - The paper does not publish a random seed; this script uses one so the
-    train/validation split is reproducible.
-"""
 
 from __future__ import annotations
 

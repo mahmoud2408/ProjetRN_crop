@@ -1,13 +1,4 @@
-"""
-Build MCTNet-ready datasets extended with environmental covariates.
 
-Expected input:
-  - CSV exported from gee/mctnet_env_covariates_prep_2021.js
-
-Outputs:
-  - .npz bundle with Sentinel-2 tensors + raw environmental covariates
-  - .json metadata describing covariate groups
-"""
 
 from __future__ import annotations
 

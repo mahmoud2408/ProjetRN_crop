@@ -1,15 +1,3 @@
-"""
-Minimal PyTorch validation for the MCTNet dataset tensors.
-
-This script does not train the model. It validates that the exported data
-matches the expected MCTNet input layout:
-  - spectral tensor: [N, 36, 10]
-  - valid mask: [N, 36]
-  - expanded missing mask: [N, 36, 10]
-
-It also provides a minimal Dataset/DataLoader structure for the future
-training pipeline.
-"""
 
 from __future__ import annotations
 

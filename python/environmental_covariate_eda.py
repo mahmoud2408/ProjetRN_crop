@@ -1,6 +1,4 @@
-"""
-Exploratory analysis for environmental covariates and crop classes.
-"""
+
 
 from __future__ import annotations
 

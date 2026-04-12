@@ -1,19 +1,4 @@
-"""
-Train MCTNet on multiple processed state datasets and save per-state results.
 
-This script expects the processed datasets created by build_mctnet_dataset.py:
-  - <state>_mctnet_dataset.npz
-  - <state>_mctnet_dataset.json
-
-For each state, it:
-  - trains MCTNet
-  - saves the best checkpoint
-  - evaluates the best checkpoint on the test set
-  - saves confusion matrix artifacts
-  - saves metrics
-
-It also writes a global summary JSON and CSV across all states.
-"""
 
 from __future__ import annotations
 

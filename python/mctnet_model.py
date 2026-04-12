@@ -1,29 +1,4 @@
-"""
-PyTorch implementation of MCTNet for pixel-based crop classification.
 
-Paper:
-Y. Wang et al. (2024)
-"A lightweight CNN-Transformer network for pixel-based crop mapping
-using time-series Sentinel-2 imagery"
-
-Paper-driven components implemented here:
-  - Multi-stage CNN-Transformer network (MCTNet)
-  - CTFusion blocks with parallel CNN and Transformer branches
-  - ALPE (attention-based learnable positional encoding)
-  - Three stages by default
-  - Five attention heads by default
-  - Kernel size 3 by default
-  - Missing-data mask used inside ALPE
-
-Implementation choices explicitly marked in comments:
-  - Stage widths are set to [10, 20, 40] to stay lightweight and
-    approximately match the parameter budget reported in the paper.
-  - Max pooling is used between stages because the paper mentions
-    pooling operations but the figure text available here does not
-    expose the exact pooling operator.
-  - The final classifier uses channel-wise global max pooling to stay
-    close to the wording of the paper.
-"""
 
 from __future__ import annotations
 
