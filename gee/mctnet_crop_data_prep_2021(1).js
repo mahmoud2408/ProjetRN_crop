@@ -5,17 +5,17 @@
  * using time-series Sentinel-2 imagery"
  *
  * This script prepares two user-defined study areas:
- * - Arkansas ROI (Corn, Cotton, Rice, Soybeans)
- * - California ROI (Rice, Alfalfa, Grapes, Almonds, Pistachios)
+ *   - Arkansas ROI
+ *   - California ROI
  *
  * Exports:
- * - One CSV per state with 10,000 randomly sampled labeled points
- * - 360 Sentinel-2 spectral features (36 time steps x 10 bands)
- * - 36 validity flags to mark missing temporal observations
+ *   - One CSV per state with 10,000 randomly sampled labeled points
+ *   - 360 Sentinel-2 spectral features (36 time steps x 10 bands)
+ *   - 36 validity flags to mark missing temporal observations
  *
  * Requirements:
- * - Google Earth Engine account and activated access
- * - Run inside the Earth Engine Code Editor
+ *   - Google Earth Engine account and activated access
+ *   - Run inside the Earth Engine Code Editor
  ***************************************/
 
 var CONFIG = {
@@ -26,6 +26,7 @@ var CONFIG = {
   nTimeSteps: 36,
   sampleCount: 10000,
   cdlConfidenceThreshold: 95,
+  rareClassFraction: 0.05,
   exportFolder: 'mctnet_crop_mapping_2021',
   randomSeed: 2021,
   // GEE expects signed decimal degrees. Western longitudes are negative.
@@ -34,15 +35,13 @@ var CONFIG = {
       name: 'Arkansas',
       abbrev: 'AR',
       point1: {lat: 35.9, lon: -91.7},
-      point2: {lat: 34.8, lon: -92.3},
-      targetCodes: [1, 2, 3, 5] // Corn, Cotton, Rice, Soybeans
+      point2: {lat: 34.8, lon: -92.3}
     },
     {
       name: 'California',
       abbrev: 'CA',
       point1: {lat: 38.8, lon: -121.7},
-      point2: {lat: 36.2, lon: -119.6},
-      targetCodes: [3, 36, 69, 75, 204] // Rice, Alfalfa, Grapes, Almonds, Pistachios
+      point2: {lat: 36.2, lon: -119.6}
     }
   ],
   s2Bands: ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
@@ -137,6 +136,10 @@ function makeFullyMaskedEmptyImage() {
 }
 
 function maskSentinel2Clouds(image) {
+  // Implementation choice:
+  // The paper only says "cloud-affected pixels were eliminated".
+  // Here we use QA60 + SCL from Sentinel-2 L2A to remove clouds,
+  // cirrus, shadows, snow/ice, saturated pixels, and no-data pixels.
   var qa60 = image.select('QA60');
   var scl = image.select('SCL');
 
@@ -185,8 +188,11 @@ function buildTenDayComposite(stepIndex, s2Collection) {
     )
   );
 
+  // Paper: missing values are kept and marked as 0.
   var featureImage = composite.unmask(0).rename(getFeatureBandNamesForStep(stepIndex));
 
+  // Paper: Input 2 indicates whether the temporal observation is missing.
+  // We export one validity flag per time step (1 = observed, 0 = missing).
   var validImage = composite.select(CONFIG.s2Bands[0]).mask()
     .rename([getValidBandNameForStep(stepIndex)])
     .unmask(0)
@@ -217,17 +223,24 @@ function buildEligibleMask(region) {
     .clip(region);
 }
 
-function addLabelMetadata(feature, targetCodes) {
+function getRetainedClassCodes(sampleCollection) {
+  var histogram = ee.Dictionary(sampleCollection.aggregate_histogram('label_code'));
+  var minCount = ee.Number(CONFIG.sampleCount).multiply(CONFIG.rareClassFraction);
+
+  return histogram.keys().map(function(key) {
+    key = ee.String(key);
+    var count = ee.Number(histogram.get(key));
+    return ee.Algorithms.If(count.gte(minCount), ee.Number.parse(key), null);
+  }).removeAll([null]);
+}
+
+function addLabelMetadata(feature, retainedCodes) {
   var labelKey = normalizeCodeString(feature.get('label_code'));
   var labelCode = ee.Number.parse(labelKey);
   var labelName = ee.String(cdlClassDict.get(labelKey, 'unknown'));
-
-  // Utilisation de la liste des classes cibles fournie dans CONFIG
-  var isTarget = ee.List(targetCodes).contains(labelCode);
-
-  var finalCode = ee.Number(ee.Algorithms.If(isTarget, labelCode, 0));
-  var finalName = ee.String(ee.Algorithms.If(isTarget, labelName, 'others'));
-
+  var keepLabel = ee.List(retainedCodes).contains(labelCode);
+  var finalCode = ee.Number(ee.Algorithms.If(keepLabel, labelCode, 0));
+  var finalName = ee.String(ee.Algorithms.If(keepLabel, labelName, 'others'));
   var coordinates = feature.geometry().coordinates();
 
   return feature.set({
@@ -257,6 +270,7 @@ function buildStateSamples(stateConfig) {
     .addBands(cdlConfidence.updateMask(eligibleMask).rename('cdl_confidence'))
     .addBands(samplingClass);
 
+  // Paper: 10,000 random points per study area.
   var rawSamples = samplingImage.stratifiedSample({
     numPoints: CONFIG.sampleCount,
     classBand: 'sampling_class',
@@ -276,11 +290,10 @@ function buildStateSamples(stateConfig) {
     });
   });
 
-  var targetCodes = stateConfig.targetCodes;
-
+  var retainedCodes = getRetainedClassCodes(rawSamples);
   var finalSamples = rawSamples
     .map(function(feature) {
-      return addLabelMetadata(feature, targetCodes);
+      return addLabelMetadata(feature, retainedCodes);
     })
     .map(function(feature) {
       return feature.setGeometry(null);
@@ -290,7 +303,7 @@ function buildStateSamples(stateConfig) {
     regionFeature: regionFeature,
     stack: timeSeriesStack,
     samples: finalSamples,
-    targetCodes: targetCodes
+    retainedCodes: retainedCodes
   };
 }
 
@@ -310,8 +323,8 @@ function exportStateSamples(stateConfig) {
     stateData.samples.aggregate_histogram('label_final_name')
   );
   print(
-    'Target class codes (' + stateConfig.abbrev + '):',
-    stateData.targetCodes
+    'Retained class codes (' + stateConfig.abbrev + '):',
+    stateData.retainedCodes
   );
 
   Map.addLayer(stateData.regionFeature, {}, stateConfig.name + ' ROI', false);

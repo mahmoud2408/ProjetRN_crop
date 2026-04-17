@@ -1,14 +1,37 @@
+"""
+build_mctnet_env_dataset.py
+===========================
+Convertit les CSV GEE (Sentinel-2 + covariables environnementales) en
+fichiers .npz/.json compatibles avec MCTNet.
 
+Dépend de build_dataset.py pour les utilitaires partagés.
+
+Usage :
+    python build_mctnet_env_dataset.py \
+        --input-csv mctnet_env_samples_AR_2021.csv mctnet_env_samples_CA_2021.csv \
+        --output-dir /path/to/processed_env
+
+Colonnes GEE exportées (vérifiées contre mctnet_env_covariates_prep_2021.js) :
+  Climate  : climate_pr_sum_mm, climate_tmmn_mean_c, climate_tmmx_mean_c,
+             climate_aet_sum_mm, climate_pet_sum_mm, climate_vpd_mean_kpa
+  Soil     : soil_clay_0cm_pct, soil_sand_0cm_pct, soil_soc_0cm_gkg, soil_phh2o_0cm
+  Topo     : topo_elevation_m, topo_slope_deg, topo_aspect_sin, topo_aspect_cos
+"""
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 
-from build_mctnet_dataset import (
+# Importation depuis le module corrigé (build_dataset.py)
+from build_dataset import (
+    detect_state,
+    enforce_target_classes,
     make_label_mapping,
     ordered_feature_columns,
     ordered_valid_columns,
@@ -17,7 +40,13 @@ from build_mctnet_dataset import (
     split_like_paper,
 )
 
-CLIMATE_COLUMNS = [
+# ---------------------------------------------------------------------------
+# Définition des groupes de covariables environnementales
+# Les noms correspondent EXACTEMENT aux CONFIG.climateBands / soilBands /
+# topographyBands du script GEE mctnet_env_covariates_prep_2021.js
+# ---------------------------------------------------------------------------
+
+CLIMATE_COLUMNS: List[str] = [
     'climate_pr_sum_mm',
     'climate_tmmn_mean_c',
     'climate_tmmx_mean_c',
@@ -26,42 +55,62 @@ CLIMATE_COLUMNS = [
     'climate_vpd_mean_kpa',
 ]
 
-SOIL_COLUMNS = [
+SOIL_COLUMNS: List[str] = [
     'soil_clay_0cm_pct',
     'soil_sand_0cm_pct',
     'soil_soc_0cm_gkg',
     'soil_phh2o_0cm',
 ]
 
-TOPOGRAPHY_COLUMNS = [
+TOPOGRAPHY_COLUMNS: List[str] = [
     'topo_elevation_m',
     'topo_slope_deg',
     'topo_aspect_sin',
     'topo_aspect_cos',
 ]
 
-ENV_GROUPS = {
-    'climate': CLIMATE_COLUMNS,
-    'soil': SOIL_COLUMNS,
+ENV_GROUPS: Dict[str, List[str]] = {
+    'climate':    CLIMATE_COLUMNS,
+    'soil':       SOIL_COLUMNS,
     'topography': TOPOGRAPHY_COLUMNS,
 }
 
-ALL_ENV_COLUMNS = CLIMATE_COLUMNS + SOIL_COLUMNS + TOPOGRAPHY_COLUMNS
+ALL_ENV_COLUMNS: List[str] = CLIMATE_COLUMNS + SOIL_COLUMNS + TOPOGRAPHY_COLUMNS
+
+# Noms des configurations d'ablation (Partie 2 de l'énoncé)
+ABLATION_CONFIGS: Dict[str, List[str]] = {
+    'baseline':    [],
+    'climate':     CLIMATE_COLUMNS,
+    'soil':        SOIL_COLUMNS,
+    'topography':  TOPOGRAPHY_COLUMNS,
+    'all':         ALL_ENV_COLUMNS,
+}
 
 
-def extract_env_array(dataframe: pd.DataFrame):
+def extract_env_array(dataframe: pd.DataFrame) -> np.ndarray:
+    """Extrait la matrice des covariables env. → shape [N, 14]."""
     return dataframe[ALL_ENV_COLUMNS].to_numpy(dtype='float32')
 
 
 def build_env_dataset_bundle(
-    csv_path: Path,
-    normalize_reflectance: bool,
-    reflectance_scale: float,
-    split_seed: int,
-) -> Tuple[Dict[str, object], Dict[str, object]]:
+    csv_path:              Path,
+    normalize_reflectance: bool  = True,
+    reflectance_scale:     float = 10000.0,
+    split_seed:            int   = 2021,
+) -> Tuple[Dict[str, np.ndarray], Dict]:
+    """
+    Lit un CSV GEE avec covariables environnementales et produit un bundle
+    contenant, pour chaque split (train/val/test) :
+      - x_{split}           : [N, 36, 10]  séries temporelles Sentinel-2
+      - valid_mask_{split}  : [N, 36]      masque de disponibilité
+      - missing_mask_{split}: [N, 36, 10]  masque de valeurs manquantes
+      - y_{split}           : [N]          étiquettes entières
+      - env_{split}         : [N, 14]      covariables environnementales statiques
+    """
     dataframe = pd.read_csv(csv_path)
     dataframe = dataframe.sort_values('sample_id').reset_index(drop=True)
 
+    # ── Vérification des colonnes ─────────────────────────────────────────────
     required_columns = set(
         ['sample_id', 'state_name', 'label_final_name', 'label_final_code']
         + ordered_feature_columns()
@@ -70,105 +119,132 @@ def build_env_dataset_bundle(
     )
     missing_columns = required_columns.difference(dataframe.columns)
     if missing_columns:
-        raise ValueError(f'Colonnes manquantes dans {csv_path.name}: {sorted(missing_columns)}')
+        raise ValueError(
+            f'Colonnes manquantes dans {csv_path.name} '
+            f'({len(missing_columns)} colonnes) : {sorted(missing_columns)[:5]} ...'
+        )
 
-    name_to_index, name_to_original_code = make_label_mapping(dataframe)
-    split_frames = split_like_paper(dataframe, seed=split_seed)
+    # ── Filtrage des classes cibles ───────────────────────────────────────────
+    dataframe = enforce_target_classes(dataframe)
 
-    bundle: Dict[str, object] = {}
+    # make_label_mapping retourne (name_to_idx: Dict[str,int], code_to_idx: Dict[int,int])
+    name_to_idx, code_to_idx = make_label_mapping(dataframe)
+
+    # Reconstruction du dictionnaire classe -> code CDL original (avant groupement)
+    original_code_map: Dict[str, int] = {}
+    for name, idx in name_to_idx.items():
+        rows = dataframe[dataframe['label_final_name'] == name]['label_final_code']
+        # Pour 'others' il y a plusieurs codes ; on stocke la liste
+        codes = rows.unique().tolist()
+        original_code_map[name] = codes[0] if len(codes) == 1 else codes
+
+    # ── Splits reproducibles ─────────────────────────────────────────────────
+    splits = split_like_paper(dataframe, split_seed)
+
+    f_cols = ordered_feature_columns()
+    v_cols = ordered_valid_columns()
+
+    bundle: Dict[str, np.ndarray] = {}
     split_counts: Dict[str, Dict[str, int]] = {}
 
-    for split_name, split_frame in split_frames.items():
-        packed = pack_split(
-            dataframe=split_frame,
-            name_to_index=name_to_index,
-            normalize_reflectance=normalize_reflectance,
-            reflectance_scale=reflectance_scale,
+    for split_name, split_df in splits.items():
+        x, v, m, y = pack_split(split_df, f_cols, v_cols, code_to_idx)
+        if normalize_reflectance:
+            x = x / reflectance_scale
+
+        bundle[f'x_{split_name}']            = x
+        bundle[f'valid_mask_{split_name}']   = v
+        bundle[f'missing_mask_{split_name}'] = m
+        bundle[f'y_{split_name}']            = y
+        bundle[f'env_{split_name}']          = extract_env_array(split_df)
+
+        split_counts[split_name] = (
+            split_df['label_final_name'].value_counts().sort_index().to_dict()
         )
-        for key, value in packed.items():
-            bundle[f'{key}_{split_name}'] = value
 
-        bundle[f'env_{split_name}'] = extract_env_array(split_frame)
-        split_counts[split_name] = split_frame['label_final_name'].value_counts().sort_index().to_dict()
-
-    env_column_to_index = {column_name: idx for idx, column_name in enumerate(ALL_ENV_COLUMNS)}
-    env_group_to_indices = {
-        group_name: [env_column_to_index[column_name] for column_name in column_names]
-        for group_name, column_names in ENV_GROUPS.items()
+    # ── Métadonnées ───────────────────────────────────────────────────────────
+    col_to_idx = {col: i for i, col in enumerate(ALL_ENV_COLUMNS)}
+    group_to_indices = {
+        grp: [col_to_idx[c] for c in cols]
+        for grp, cols in ENV_GROUPS.items()
     }
 
     state_name = str(dataframe['state_name'].iloc[0])
-    metadata: Dict[str, object] = {
-        'state_name': state_name,
-        'source_csv': str(csv_path),
-        'n_samples_total': int(len(dataframe)),
-        's2_bands': ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12'],
-        'n_time_steps': 36,
+    metadata: Dict = {
+        'state_name':              state_name,
+        'source_csv':              str(csv_path),
+        'n_samples_total':         int(len(dataframe)),
+        's2_bands':                ['B2','B3','B4','B5','B6','B7','B8','B8A','B11','B12'],
+        'n_time_steps':            36,
         'feature_shape_per_sample': [36, 10],
-        'class_name_to_index': name_to_index,
-        'class_name_to_original_code': name_to_original_code,
-        'split_counts': split_counts,
+        'class_name_to_index':     name_to_idx,
+        'class_name_to_original_code': original_code_map,
+        'num_classes':             len(name_to_idx),
+        'split_counts':            split_counts,
+        'samples_per_split':       {k: len(v) for k, v in splits.items()},
         'environmental_covariates': {
-            'all_columns': ALL_ENV_COLUMNS,
-            'group_to_columns': ENV_GROUPS,
-            'column_to_index': env_column_to_index,
-            'group_to_indices': env_group_to_indices,
+            'all_columns':       ALL_ENV_COLUMNS,
+            'n_env_features':    len(ALL_ENV_COLUMNS),
+            'group_to_columns':  ENV_GROUPS,
+            'column_to_index':   col_to_idx,
+            'group_to_indices':  group_to_indices,
+        },
+        'ablation_configs': {
+            name: [col_to_idx[c] for c in cols]
+            for name, cols in ABLATION_CONFIGS.items()
         },
         'paper_settings': {
-            'train_val_per_class': 300,
+            'train_val_per_class':             300,
             'train_fraction_within_train_val': 0.8,
             'missing_values_marked_with_zero': True,
-            'input_1_shape': [36, 10],
-            'input_2_shape': [36],
         },
         'implementation_choices': {
             'normalize_reflectance': normalize_reflectance,
-            'reflectance_scale': reflectance_scale if normalize_reflectance else None,
-            'split_seed': split_seed,
-            'environmental_covariates_are_static_per_point': True,
+            'reflectance_scale':     reflectance_scale if normalize_reflectance else None,
+            'split_seed':            split_seed,
+            'env_covariates_are_static_per_point': True,
+            'env_shape_per_sample':  [len(ALL_ENV_COLUMNS)],
+            'fusion_strategy':       'early_fusion_repeat_across_time',
         },
     }
 
     return bundle, metadata
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description='Convert GEE CSV exports with environmental covariates into MCTNet-ready datasets.'
-    )
-    parser.add_argument('--input-csv', nargs='+', required=True, help='CSV files exported from GEE.')
-    parser.add_argument('--output-dir', required=True, help='Output directory for .npz/.json files.')
-    parser.add_argument('--split-seed', type=int, default=2021, help='Reproducible split seed.')
-    parser.add_argument('--reflectance-scale', type=float, default=10000.0, help='Sentinel-2 SR scale factor.')
-    parser.add_argument(
-        '--disable-normalize-reflectance',
-        action='store_true',
-        help='Keep Sentinel-2 values exactly as exported by GEE.',
-    )
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
-    output_dir = Path(args.output_dir)
-    normalize_reflectance = not args.disable_normalize_reflectance
+    parser = argparse.ArgumentParser(
+        description='Convertit les CSV GEE (S2 + covariables) en datasets MCTNet .npz/.json.'
+    )
+    parser.add_argument('--input-csv',  nargs='+', required=True)
+    parser.add_argument('--output-dir', required=True)
+    parser.add_argument('--split-seed', type=int,   default=2021)
+    parser.add_argument('--reflectance-scale', type=float, default=10000.0)
+    parser.add_argument('--disable-normalize-reflectance', action='store_true')
+    args = parser.parse_args()
 
-    for input_csv in args.input_csv:
-        csv_path = Path(input_csv)
+    output_dir          = Path(args.output_dir)
+    normalize           = not args.disable_normalize_reflectance
+
+    for csv_file in args.input_csv:
+        csv_path = Path(csv_file)
         bundle, metadata = build_env_dataset_bundle(
-            csv_path=csv_path,
-            normalize_reflectance=normalize_reflectance,
-            reflectance_scale=args.reflectance_scale,
-            split_seed=args.split_seed,
+            csv_path              = csv_path,
+            normalize_reflectance = normalize,
+            reflectance_scale     = args.reflectance_scale,
+            split_seed            = args.split_seed,
         )
 
-        state_slug = metadata['state_name'].lower().replace(' ', '_')
-        output_npz = output_dir / f'{state_slug}_mctnet_env_dataset.npz'
-        output_json = output_dir / f'{state_slug}_mctnet_env_dataset.json'
-        save_bundle(bundle, metadata, output_npz, output_json)
+        slug      = detect_state(pd.DataFrame({'state_name': [metadata['state_name']]}))
+        npz_path  = output_dir / f'{slug}_mctnet_env_dataset.npz'
+        json_path = output_dir / f'{slug}_mctnet_env_dataset.json'
+        save_bundle(bundle, metadata, npz_path, json_path)
 
-        print(f'[{metadata["state_name"]}] env dataset ecrit : {output_npz}')
-        print(f'[{metadata["state_name"]}] env metadonnees : {output_json}')
+        print(f'\n[{metadata["state_name"]}]')
+        print(f'  {metadata["num_classes"]} classes : {list(metadata["class_name_to_index"].keys())}')
+        for split, counts in metadata['split_counts'].items():
+            print(f'  {split:5s}: {counts}')
+        print(f'  env shape : [N, {metadata["environmental_covariates"]["n_env_features"]}]')
+        print(f'  -> {npz_path}')
 
 
 if __name__ == '__main__':
