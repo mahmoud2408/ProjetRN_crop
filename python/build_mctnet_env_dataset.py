@@ -11,11 +11,10 @@ Usage :
         --input-csv mctnet_env_samples_AR_2021.csv mctnet_env_samples_CA_2021.csv \
         --output-dir /path/to/processed_env
 
-Colonnes GEE exportées (vérifiées contre mctnet_env_covariates_prep_2021.js) :
-  Climate  : climate_pr_sum_mm, climate_tmmn_mean_c, climate_tmmx_mean_c,
-             climate_aet_sum_mm, climate_pet_sum_mm, climate_vpd_mean_kpa
-  Soil     : soil_clay_0cm_pct, soil_sand_0cm_pct, soil_soc_0cm_gkg, soil_phh2o_0cm
-  Topo     : topo_elevation_m, topo_slope_deg, topo_aspect_sin, topo_aspect_cos
+Sélection retenue (8 variables sur 14 disponibles dans GEE) :
+  Climat (3) : climate_vpd_mean_kpa, climate_pr_sum_mm, climate_tmmn_mean_c
+  Sol    (3) : soil_clay_0cm_pct, soil_sand_0cm_pct, soil_phh2o_0cm
+  Topo   (2) : topo_elevation_m, topo_slope_deg
 """
 
 from __future__ import annotations
@@ -49,24 +48,18 @@ from build_dataset import (
 CLIMATE_COLUMNS: List[str] = [
     'climate_pr_sum_mm',
     'climate_tmmn_mean_c',
-    'climate_tmmx_mean_c',
-    'climate_aet_sum_mm',
-    'climate_pet_sum_mm',
     'climate_vpd_mean_kpa',
 ]
 
 SOIL_COLUMNS: List[str] = [
     'soil_clay_0cm_pct',
     'soil_sand_0cm_pct',
-    'soil_soc_0cm_gkg',
     'soil_phh2o_0cm',
 ]
 
 TOPOGRAPHY_COLUMNS: List[str] = [
     'topo_elevation_m',
     'topo_slope_deg',
-    'topo_aspect_sin',
-    'topo_aspect_cos',
 ]
 
 ENV_GROUPS: Dict[str, List[str]] = {
@@ -88,7 +81,7 @@ ABLATION_CONFIGS: Dict[str, List[str]] = {
 
 
 def extract_env_array(dataframe: pd.DataFrame) -> np.ndarray:
-    """Extrait la matrice des covariables env. → shape [N, 14]."""
+    """Extrait la matrice des covariables env. → shape [N, 8]."""
     return dataframe[ALL_ENV_COLUMNS].to_numpy(dtype='float32')
 
 
@@ -105,7 +98,7 @@ def build_env_dataset_bundle(
       - valid_mask_{split}  : [N, 36]      masque de disponibilité
       - missing_mask_{split}: [N, 36, 10]  masque de valeurs manquantes
       - y_{split}           : [N]          étiquettes entières
-      - env_{split}         : [N, 14]      covariables environnementales statiques
+      - env_{split}         : [N, 8]       covariables environnementales statiques (3 clim + 3 sol + 2 topo)
     """
     dataframe = pd.read_csv(csv_path)
     dataframe = dataframe.sort_values('sample_id').reset_index(drop=True)
@@ -203,7 +196,7 @@ def build_env_dataset_bundle(
             'reflectance_scale':     reflectance_scale if normalize_reflectance else None,
             'split_seed':            split_seed,
             'env_covariates_are_static_per_point': True,
-            'env_shape_per_sample':  [len(ALL_ENV_COLUMNS)],
+            'env_shape_per_sample':  [len(ALL_ENV_COLUMNS)],  # [8]
             'fusion_strategy':       'early_fusion_repeat_across_time',
         },
     }

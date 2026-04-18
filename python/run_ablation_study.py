@@ -3,12 +3,12 @@ run_ablation_study.py
 =====================
 Étude d'ablation Partie 2 — Impact des covariables environnementales sur MCTNet.
 
-5 configurations :
-  baseline   | Sentinel-2 uniquement                (input_dim = 10)
-  climate    | S2 + Climat    (6 var.)               (input_dim = 16)
-  soil       | S2 + Sol       (4 var.)               (input_dim = 14)
-  topography | S2 + Topographie (4 var.)             (input_dim = 14)
-  all        | S2 + tout      (14 var.)              (input_dim = 24)
+5 configurations — sélection de 8 covariables (3 clim + 3 sol + 2 topo) :
+  baseline   | Sentinel-2 uniquement                 (input_dim = 10)
+  climate    | S2 + Climat    (3 var.)               (input_dim = 13)
+  soil       | S2 + Sol       (3 var.)               (input_dim = 13)
+  topography | S2 + Topographie (2 var.)             (input_dim = 12)
+  all        | S2 + tout      (8 var.)               (input_dim = 18)
 
 Stratégie de fusion : Early Fusion — les covariables statiques sont répétées
 sur les 36 pas de temps et concaténées aux 10 bandes Sentinel-2 avant d'entrer
