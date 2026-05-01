@@ -1,0 +1,1325 @@
+A lightweight CNN-Transformer network for pixel-based crop mapping 
+using time-series Sentinel-2 imagery
+Yumiao Wang
+a , b
+, Luwei Feng
+c
+, Weiwei Sun
+a , *
+, Lihua Wang
+a
+, Gang Yang
+a
+, Binjie Chen
+a
+a
+Department of Geography and Spatial Information Techniques, Ningbo University, Ningbo 315211, China
+b
+Institute of East China Sea, Ningbo University, Ningbo, Zhejiang 315211, China
+c
+School of Remote Sensing and Information Engineering, Wuhan University, Wuhan 430079, China
+ARTICLE INFO
+Keywords:
+Crop mapping
+Convolutional neural network
+Transformer
+Pixel-based classification
+Temporal Sentinel-2 data
+ABSTRACT
+Deep learning approaches have provided state-of-the-art performance in crop mapping. Recently, several studies 
+have combined the strengths of two dominant deep learning architectures, Convolutional Neural Networks 
+(CNNs) and Transformers, to classify crops using remote sensing images. Despite their success, many of these 
+models utilize patch-based methods that require extensive data labeling, as each sample contains multiple pixels 
+with corresponding labels. This leads to higher costs in data preparation and processing. Moreover, previous 
+methods rarely considered the impact of missing values caused by clouds and no-observations in remote sensing 
+data. Therefore, this study proposes a lightweight multi-stage CNN-Transformer network (MCTNet) for pixel- 
+based crop mapping using time-series Sentinel-2 imagery. MCTNet consists of several successive modules, 
+each containing a CNN sub-module and a Transformer sub-module to extract important features from the images, 
+respectively. An attention-based learnable positional encoding (ALPE) module is designed in the Transformer 
+sub-module to capture the complex temporal relations in the time-series data with different missing rates. 
+Arkansas and California in the U.S. are selected to evaluate the model. Experimental results show that the 
+MCTNet has a lightweight advantage with the fewest parameters and memory usage while achieving the superior 
+performance compared to eight advanced models. Specifically, MCTNet obtained an overall accuracy (OA) of 
+0.968, a kappa coefficient (Kappa) of 0.951, and a macro-averaged F1 score (F1) of 0.933 in Arkansas, and an OA 
+of 0.852, a Kappa of 0.806, and an F1 score of 0.829 in California. The results highlight the importance of each 
+component of the model, particularly the ALPE module, which enhanced the Kappa of MCTNet by 4.2% in 
+Arkansas and improved the model ’ s robustness to missing values in remote sensing data. Additionally, visuali -
+zation results demonstrated that the features extracted from CNN and Transformer sub-modules are comple -
+mentary, explaining the effectiveness of the MCTNet.
+1. Introduction
+Reliable crop maps are essential for monitoring agricultural land use 
+and aiding decision-makers in issuing effective policies to guide sus -
+tainable agricultural development ( Bargiel, 2017 ). Remote sensing has 
+become the primary means of crop mapping due to its extensive range of 
+observation, regular revisit time, and low cost. Especially, after the 
+successful launch of Sentinel-2 satellites, it is easier to access optical 
+data with fine temporal and spatial resolutions. The time-series optical 
+imagery characterizes the dynamic growth patterns of crops, providing 
+additional valuable information for crop classification ( Ashourloo et al., 
+2019; Yuan et al., 2022 ).
+Traditional crop mapping approaches using time-series remote 
+sensing data can be broadly categorized into three types: threshold- 
+based, statistics-based, and machine learning methods. Threshold- 
+based methods primarily consider the optimal seasonal threshold to 
+separate different crop types based on phenological characteristics and 
+expert experience ( Chen et al., 2023; Huang et al., 2022 ). Statistics- 
+based approaches focus on statistically linking phenology and bio -
+physical changes during crop growth by constructing predefined math -
+ematical functions or models ( Achanccaray et al., 2017; Asad and Bais, 
+2020 ). However, the aforementioned approaches have limited modeling 
+* Corresponding author.
+E-mail addresses: wymfrank@whu.edu.cn (Y. Wang), lwfeng@whu.edu.cn (L. Feng), sunweiwei@nbu.edu.cn (W. Sun), wanglihua@nbu.edu.cn (L. Wang), 
+yanggang@nbu.edu.cn (G. Yang), chenbinjie@nbu.edu.cn (B. Chen). 
+Contents lists available at ScienceDirect
+Computers and Electronics in Agriculture
+journal homep age: www. elsevier.com/ locate/comp ag
+https://doi.org/10.1016/j.compag.2024.109370
+Received 31 March 2024; Received in revised form 26 July 2024; Accepted 21 August 2024  
+Computers and Electronics in Agriculture 226 (2024) 109370 
+Available online 28 August 2024 
+0168-1699/© 2024 Elsevier B.V. All rights are reserved, including those for text and data mining, AI training, and similar technologies. 
+
+capacity and can be affected by inter-annual and regional discrepancies 
+( Blickensd ¨orfer et al., 2022; Qiu et al., 2018 ). Machine learning has the 
+advantage of effectively utilizing a wider range of features. Various 
+machine learning models have been successfully applied to crop map -
+ping, such as support vector machine (SVM) and random forest (RF) 
+( Feng et al., 2019; Maponya et al., 2020 ). However, several drawbacks 
+exist in traditional machine learning models. First, feature engineering is 
+heavily relied upon to select important information and remove 
+redundant information ( Xu et al., 2020 ). Second, time-series spectral 
+features are often treated as a collection of independent features, 
+ignoring the temporal correlations ( Inglada et al., 2017; Interdonato 
+et al., 2019 ).
+With the fast development of artificial intelligence, deep learning 
+models have exhibited immense potential in crop mapping ( Zhong et al., 
+2019 ). Superior to traditional machine learning methods, deep learning 
+can automatically learn discriminating features from complex informa -
+tion, eliminating the effort to select features manually ( Schmidhuber, 
+2015 ). Among the various deep learning approaches, convolutional 
+neural networks (CNNs), recurrent neural networks (RNNs), and 
+Transformers have been widely used to classify crops ( Ru ß wurm and 
+K ¨orner, 2020 ). CNNs apply convolution operations to extract features. 
+Since convolution has a fixed kernel size which leads to a local receptive 
+field, CNNs are highly efficient at extracting local information but have 
+insufficient ability to capture global information ( Wang et al., 2022a ). 
+RNNs are specifically designed for time-series data modeling, which 
+sequentially processes each time step through recurrent cells. In 
+particular, long short-term memory (LSTM) is a widely used RNN 
+method for land cover classifications using time-series images ( Sun 
+et al., 2019 ). Unlike RNNs, Transformers utilize the multi-head self- 
+attention mechanism and positional encoding to process all time steps of 
+sequential data simultaneously ( Vaswani et al., 2017 ). This mechanism 
+is inherently flexible and can understand the relationships between 
+distant parts of the input sequence to obtain both local and global in -
+formation. Different from the fixed receptive field of CNNs, Trans -
+formers can adapt their attention dynamically and capture long-range 
+dependencies in sequential data, which is essential for understanding 
+the overall temporal dynamics and growth patterns of crops across an 
+entire season. For example, Yuan and Lin (2021) proposed a 
+Transformer-based model for crop mapping and achieved better per -
+formance than RNNs. Additionally, several studies have proposed more 
+efficient models based on Transformers for mining time-series images, 
+such as temporal attention encoder (TAE) ( Garnot et al., 2020 ) and 
+lightweight temporal attention encoder (LTAE) ( Garnot and Landrieu, 
+2020 ).
+Since CNNs excel at extracting local features while Transformers are 
+adept at capturing long-term dependencies, several recent studies have 
+combined the strengths of both approaches to enhance crop mapping 
+performance ( Liu et al., 2022; Niu et al., 2022; Tang et al., 2024; Wang 
+et al., 2022a; Xiang et al., 2023 ). However, these hybrid models have 
+primarily focused on patch-based crop mapping in small regions. 
+Although patch-based models can utilize additional spatial information 
+compared to pixel-based models, the cost of patch-based sampling is 
+more expensive ( Feng et al., 2023 ), limiting their application in large 
+areas. Moreover, most of these models used an encoder-decoder struc -
+ture commonly applied in language translation and segmentation tasks. 
+The encoder-decoder structures can increase the volume of the model, 
+making it unsuitable for lightweight applications. In contrast, pixel- 
+based crop mapping is a typical classification problem that only re -
+quires an encoder to extract features for classification ( Li et al., 2020 ). 
+Zhang et al. (2023) integrated a CNN and a modified Transformer to 
+design a global – local temporal attention encoder (GL-TAE) for pixel- 
+based crop mapping. In their approach, time-series multi-spectral data 
+is transformed into a 2D matrix, enabling the CNN to extract local 
+temporal patterns. These local features are then merged with features 
+extracted by the Transformer to enhance crop mapping. The results 
+demonstrate that this hybrid model significantly outperforms both the 
+CNN and the Transformer models.
+However, previous CNN-Transformer models simply integrated fea -
+tures extracted from CNN and Transformer while giving limited 
+consideration to missing data. Missing values in time-series images are 
+often inevitable due to factors such as cloud cover and non-observation. 
+These missing values can disrupt the inherent temporal patterns of 
+crops, potentially affecting the performance of models, especially those 
+that consider sequential information, such as Transformers. Although 
+Ru ß wurm and K ¨orner (2020) found that the self-attention mechanism of 
+Transformers reduces the impact of missing values in time-series remote 
+sensing data for crop mapping to a certain extent, it is not specifically 
+designed to address missing values, and thus performance improve -
+ments are necessary. Several studies have applied interpolation tech -
+niques to eliminate missing values ( Wang et al., 2022b; You et al., 2021 ). 
+However, performing interpolation demands extensive computational 
+resources for multi-bands in large temporal-spatial scales. Moreover, 
+there remains an inherent uncertainty regarding the fidelity of the 
+reconstructed data to the actual values, which raises concerns about the 
+reliability of interpolation in applications where the accuracy of tem -
+poral information is paramount.
+Therefore, we propose a lightweight multi-stage CNN-Transformer 
+network (MCTNet) for pixel-based crop mapping using time-series 
+sentinel-2 imagery. MCTNet consists of several successive CNN- 
+Transformer fusion (CTFusion) modules with pooling operations and a 
+multilayer perceptron (MLP) classifier. Each CTFusion has a CNN sub- 
+module and a Transformer sub-module. The CNN sub-module is 
+designed with a 1D convolutional network to extract local spectral in -
+formation along the time dimension. The Transformer sub-module is 
+designed based on the encoder of the original Transformer to capture the 
+long-range dependencies of the time series data and extract the features 
+from a global perspective. Besides, we designed an attention-based 
+learnable positional encoding module (ALPE) in the first Transformer 
+sub-module to capture the temporal correlation in the time series data 
+under different missing rates. We selected California and Arkansas in the 
+U.S. as study areas to verify the effectiveness of the model with distinct 
+planting structures. At the same time, eight advanced models were 
+selected for comparative verification. The main contributions of our 
+research are:
+(1) We propose the MCTNet that integrates the advantages of the 
+CNN and Transformer with a lightweight architecture for pixel-based 
+crop mapping.
+(2) ALPE is designed to reduce the impact of missing values and 
+provide reasonable positional encoding, which can improve the model ’ s 
+ability to handle time-series data under complex missing conditions.
+(3) Compared with various state-of-the-art models, the proposed 
+model exhibits superior performance in key areas, including parameter 
+size, classification accuracy, and the quality of mapping results.
+2. Materials and methods
+2.1. Study area
+Two states in the U.S. were chosen as the study areas, including 
+California and Arkansas ( Fig. 1 (a)). California has an extremely diverse 
+natural landscape, including grasslands, deserts, rainforests, mountains, 
+and oceans. The agricultural system in this state is quite complex, with 
+small plots and a variety of crop types ( Zhong et al., 2011 ). Arkansas is 
+an important agricultural state in the U.S. with over 40 % of the land 
+dedicated to agricultural production ( Martin et al., 2021 ). It is a major 
+producer of crops such as rice, soybeans, corn, cotton, and wheat, which 
+are extensively cultivated on large farms. Due to the differences in major 
+crops and cultivation methods between California and Arkansas, the 
+crop mapping models can be thoroughly validated. Besides, two distinct 
+mapping areas were selected in each state to assess the practical appli -
+cation capability of the models ( Fig. 1 (b) and Fig. 1 (c)). These areas 
+were selected for their considerable geographical separation and 
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+2 
+
+comprehensive coverage of various crop types, which allows for better 
+validation of the model ’ s validity.
+2.2. Datasets
+Three types of datasets were collected in this study, including ground 
+truth of crop type, land cover data, and remote sensing images. Table 1
+provides a summary for each data source and the detailed descriptions 
+are in the following sections.
+2.2.1. Ground truth
+Cropland Data Layer Data (CDL) is one of the most widely used crop 
+maps published by the U.S. Department of Agriculture (USDA). CDL 
+describes the distribution of more than 100 crops in the U.S., completely 
+covering Arkansas and California. It has an annual update frequency, 
+high spatial resolution (30 m), and high classification accuracy ( Boryan 
+et al., 2011 ). Moreover, it offers a confidence layer that indicates the 
+predicted confidence level for each pixel. Therefore, this study used the 
+CDL data to generate labeled samples for model training and testing.
+2.2.2. ESA WorldCover 2021
+The ESA WorldCover 2021 is a comprehensive global land cover map 
+for 2021, offering a fine spatial resolution of 10 m. This pioneering 
+product, derived from Sentinel-1 and Sentinel-2 data, provides a 
+detailed classification of the earth ’ s surface into 11 land cover classes. 
+Since this study focuses on crop mapping, ESA WorldCover 2021 was 
+used to mask non-cropland areas, thereby streamlining sample collec -
+tion and practical mapping applications.
+2.2.3. Remote sensing images
+Sentinel-2 is a multi-spectral imaging system provided by the Euro -
+pean Space Agency (ESA) and designed for high-resolution imaging of 
+the Earth ’ s surface. It comprises two satellites that can be combined to 
+provide full coverage of the Earth ’ s surface every five days. Sentinel-2 
+has 13 bands ranging from the visible to the shortwave infrared, with 
+spatial resolutions varying up to a maximum of 10 m ( Table 1 ). Among 
+these bands, Band 1, Band 9, and Band 10 have an inadequate resolution 
+(60 m) and contribute less to the fine classification of crops; thus, we 
+selected the remaining ten bands as spectral features, including three 
+visible bands, one near-infrared (NIR) band, four red-edge bands, and 
+two shortwave infrared (SWIR) bands. Besides, Sentinel-2 Level-2A 
+surface reflectance images (bottom-of-atmosphere) were applied in this 
+study because these images are atmospherically corrected and orthor -
+ectified, contributing to more accurate and reliable monitoring of agri -
+cultural conditions.
+2.2.4. Data preprocessing
+For remote sensing observations, we collected all Sentinel-2 images 
+over the study areas from the year 2021. Subsequently, we eliminated 
+cloud-affected pixels and computed the median value of the remaining 
+observations at ten-day intervals, resulting in a total of 36 temporal 
+sequences. It is noted that there are still missing data in the sequences, 
+and we used 0 to mark the missing data. We used the CDL map from 
+2021 to collect labeled crop samples. In particular, we set a 95 % con -
+fidence to filter the CDL map to improve the quality of sampling and 
+used the ESA WorldCover 2021 to mask non-cropland areas. Then, we 
+randomly sampled 10,000 points in each study area and extracted the 
+corresponding crop type from the CDL map, as well as the associated 
+spectral features from the time-series images. As a result, each labeled 
+sample has 360 spectral features, consisting of 10 spectral bands with 36 
+temporal observations. The distribution of the crop samples is shown in 
+Table 2 . Specifically, crop types that constitute less than 5 % of the total 
+number of samples were merged into a category labeled as “ others ” . The 
+NDVI time-series curve of each crop is generated by averaging the NDVI 
+values of all the corresponding crop samples ( Fig. 2 ). All the necessary 
+steps for data collection and preprocessing were executed using the 
+Google Earth Engine.
+2.3. Multi-stage CNN-Transformer network (MCTNet)
+The primary objective of the proposed MCTNet is to integrate the 
+Fig. 1. Study area. (a) Arkansas and California. (b) Mapping areas in Arkansas. (c) Mapping areas in California (The information on crop types is from CDL).
+Table 1 
+A summary of the data used in this study.
+Category Data Name Variable 
+Name
+Spatial 
+Resolution
+Temporal 
+Resolution
+Source
+Ground 
+Truth of 
+Crop 
+Type
+Crop Data 
+Layer
+Crop type 30 m Yearly USDA
+Land 
+Cover 
+Map
+ESA 
+WorldCover 
+2021
+Land 
+cover
+10 m   ESA
+Remote 
+sensing 
+images
+Sentinel-2 
+Level-2A
+Band 2 
+Blue
+10 m 5-day ESA
+Band 3 
+Green
+10 m
+Band 4 
+Red
+10 m
+Band 
+5Red 
+Edge-1
+20 m
+Band 6 
+Red Edge- 
+2
+20 m
+Band 7 
+Red Edge- 
+3
+20 m
+Band 8 
+NIR
+10 m
+Band 8A 
+Red Edge- 
+4
+20 m
+Band 11 
+SWIR 1
+20 m
+Band 12 
+SWIR 2
+20 m
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+3 
+
+strengths of CNNs and Transformers for pixel-based crop mapping. CNNs 
+are particularly effective at extracting local features while Transformers 
+are proficient at capturing long-term dependencies. By combining these 
+capabilities, MCTNet is expected to construct a more comprehensive 
+representation of crop growth patterns, thereby enhancing the accuracy 
+of crop mapping. Additionally, the ALPE module is specifically designed 
+to handle missing data effectively, ensuring both robustness and accu -
+racy of the model even in the presence of incomplete data. The MCTNet 
+uses several successive CTFusion modules with pooling operations to 
+extract the multi-level local and global information of the time-series 
+data. The structure of the proposed MCTNet with three stages is 
+shown in Fig. 3 . Given time-series images, a pixel sample can obtain 
+time-series multi-spectral features (Input 1) and a set of time-series data 
+indicating whether the current temporal data is missing (Input 2). Input 
+1 is converted to a 2D matrix for model processing. Specifically, the 
+time-series features are extracted by the CTFusion modules sequentially 
+and then are fed to an MLP classifier to predict the crop type of the 
+sample. A CTFusion is composed of two parallel components, a 
+Transformer sub-module, and a CNN sub-module. In particular, the 
+traditional positional encoding was replaced by an ALPE module in the 
+first Transformer sub-module. The ALPE module utilizes Input 2 to 
+generate an enhanced positional representation. A detailed description 
+of the modules in the proposed model is provided in the following.
+2.3.1. Transformer sub-module
+The Transformer sub-module is designed based on the encoder of the 
+original Transformer to capture the contextual information of the time- 
+series data. The architecture of the sub-module is shown in Fig. 4 . It 
+removes the input embedding of the original Transformer and mainly 
+consists of two key components: multi-head self-attention and positional 
+encoding.
+The self-attention component computes attention scores for each 
+temporal feature, enabling the model to focus on relevant context while 
+suppressing noise. Multi-head self-attention utilizes H sets of learned 
+attention weights, permitting the model to capture diverse relationships 
+and dependencies within the data. The input of the self-attention 
+component consists of query (Q), key (K), and value (V) which are 
+calculated by the module input and three different transformation 
+matrices. Q and K are used to calculate an attention weight matrix W ∈
+[0,1]
+T × T 
+(where T is the number of time steps), and the output of self- 
+attention is produced by W and V: 
+Attention ( Q , K , V ) = WV = softmax
+(
+QK
+T
+̅̅̅̅ ̅
+d
+k
+√
+)
+V (1) 
+where d
+k 
+is the column number of the Q.
+Positional information is crucial in sequential data. In the original 
+Transformer, absolute positional encoding using a fixed sinusoidal 
+encoding mechanism with a predefined wavelength is used to represent 
+the order of the temporal input ( Vaswani et al., 2017 ). The encoded 
+position can be calculated as: 
+PE ( t
+i
+)
+p
+=
+{
+sin ( t
+i
+/ 10000
+2 k / d m
+) , ifp = 2 k
+cos ( t
+i
+/ 10000
+2 k / d m
+) , ifp = 2 k + 1
+(2) 
+Table 2 
+Numbers of the samples in the study areas.
+Study area Class 
+Name
+Number of 
+Samples
+Training Validation Testing
+Arkansas Soybeans 4677 240 60 4377
+Rice 2423 240 60 2123
+Corn 1522 240 60 1222
+Cotton 762 240 60 462
+Others 616 240 60 316
+All 10,000 1200 300 8500
+California Grapes 2054 240 60 1754
+Rice 2037 240 60 1737
+Alfalfa 974 240 60 674
+Almonds 783 240 60 483
+Pistachios 640 240 60 340
+Others 3512 240 60 3212
+All 10,000 1440 360 8200
+Fig. 2. NDVI time-series profiles of the crops in (a) Arkansas and (b) California.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+4 
+
+where t
+i 
+is the temporal order, and d
+m 
+is the encoding size.
+The absolute positional encoding is added to the input to enable the 
+model to attend to both content and position. However, the absolute 
+positions lack flexibility and treat all positions equally regardless of the 
+contextual information. Besides, gaps often occur in the time-series data 
+due to clouds, and the absolute positional encoding cannot help the 
+model understand which temporal data is unreliable. Therefore, we 
+designed an attention-based learnable positional encoding (ALPE) 
+module ( Fig. 5 ) to solve the above issues. This module first uses absolute 
+positional encoding as the initial positional vector to transform the time 
+feature from one dimension to two dimensions to meet the input format. 
+The two-dimensional positional vector is masked by Input 2 (mentioned 
+in Section 2.3 ) and then processed by a 1D convolution layer. It is worth 
+noting that the mask is only used in the first stage of the model. After 
+that, the Efficient Channel Attention (ECA) module is applied to the 
+Fig. 3. Architecture of the MCTNet with three stages.
+Fig. 4. Architecture of the Transformer sub-module.
+Fig. 5. Attention-based learnable positional encoding module.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+5 
+
+processed positional vector. ECA is an efficient attention module that 
+has few parameters and can bring clear performance gain in 1D CNNs 
+( Wang et al., 2020 ). The final position matrix is expected to learn the 
+complex relationships from the time-series features and the importance 
+of different temporal positions under different missing rates. 
+ALPE ( t ) = ECA ( Conv 1 D ( PE ( t ) × mask )) (3) 
+where t represents the time series. For example, given a sequential input 
+with 36 time steps and 10 features. The absolute positional encoding of 
+its time series t is PE(t) ∈ R
+36 × 10 
+which is a two-dimensional vector. The 
+positions of the missing values in PE(t) are masked by zero to reduce the 
+impact of missing values on the subsequent position encoding learning. 
+Then, the positional vector is processed by a convolution layer and ECA 
+module to form the final positional vector ALPE ( t ) ∈ R
+36 × 10
+.
+ALPE incorporates learnable parameters into the standard positional 
+encoding, allowing the encoding to adapt based on the input data. These 
+parameters are trained to minimize the negative impact of missing 
+values, effectively modifying the positional information to better 
+represent the temporal structure of the data. By refining the positional 
+encoding, the ALPE module improves the model ’ s ability to capture the 
+relative relationships between time steps, even in the presence of 
+missing data. This enhanced representation allows the attention mech -
+anism to distribute attention weights more accurately, leading to better 
+information propagation across time steps and increased robustness to 
+missing values.
+2.3.2. CNN sub-module and MLP classifier
+The CNN sub-module is designed with a very simple structure 
+( Fig. 6 ). It consists of two consecutive 1D convolution layers that operate 
+along the time dimension of the input. Each convolution layer is fol -
+lowed by a batch normalization layer. The output of the two layers is 
+processed by a ReLU activation function. Besides, a connection directly 
+skips over the two convolutional layers and adds the input of the sub- 
+module to the output of the two layers. This shortcut connection can 
+enable the gradient to flow more easily during training and helps to 
+avoid the vanishing gradient problem. The MLP classifier is made up of a 
+linear layer with a Softmax activation. The input of the MLP is the 
+extracted features from the last CTFusion module. Specifically, the 
+output of the last CTFusion module is processed by a global max pooling 
+operation along the channel dimension to transform its form into a one- 
+dimensional vector. Then the vector is fed to the MLP classifier to predict 
+the crop type.
+2.4. Experimental setting
+There are 10,000 samples in Arkansas and California, respectively. 
+For each state, the samples were split into training, validation, and 
+testing sets. Specifically, 300 samples per crop type were randomly 
+selected to compose the training and validation datasets (with a rate of 
+8:2), and the rest samples were used for testing. The details of the sample 
+partition are shown in Table 2 . The training samples were used to train 
+the models, and the validation samples were used for selecting hyper -
+parameters, including the number of stages (n_stage), the number of 
+heads (n_head) in the Transformer sub-module, the kernel size of the 
+CNN sub-module, the learning rate (lr), and the optimizer. To fully 
+assess the effectiveness of the MCTNet, we compared it with eight 
+advanced models, including SVM, RF, LSTM, Transformer, Residual 
+Neural Network (ResNet), TAE, LTAE, and GL-TAE. Particularly, ResNet 
+is a deep CNN with many variants, and this study adopted the ResNet- 
+18, which has 18 convolutional layers. Since the original Transformer 
+is not suitable for classification tasks, this study adopted the modified 
+Transformer model of Ru ß wurm and K ¨orner (2020) , which only contains 
+the encoder part of the original Transformer.
+All models were implemented in a Python environment, in which 
+SVM and RF were constructed with the Scikit-Learn library, and the deep 
+learning models were constructed with the PyTorch library. The models 
+all ran on a workstation with an Intel I7-12900 CPU, 64 GB RAM, and an 
+NVIDIA RTX3090 24G GPU. In the training process, the batch size and 
+number of epochs of the deep learning models were set as 32 and 200, 
+respectively. The hyperparameters of the models for tuning, their can -
+didates, and their final value in each study area are listed in Table 3 . The 
+other hyperparameters of the models were selected with default values.
+To quantitatively evaluate the models, the confusion matrix was first 
+computed to show the distribution of all the predicted responses. Then, 
+overall accuracy (OA), kappa coefficient (Kappa), and macro-averaged 
+F1 score were calculated based on the matrix to comprehensively 
+measure the overall performance of the models. In particular, the macro- 
+averaged F1 score represents the average F1 score of all classes, with 
+each F1 score being the harmonic mean of precision and recall for its 
+respective class. The macro-averaged F1 usually serves as a crucial 
+metric for evaluating a model ’ s effectiveness in imbalanced datasets. For 
+the sake of brevity, this metric will be referred to as “ F1 ″ in subsequent 
+discussions. The formulas of the three metrics are shown in Eq. (4)-(6). 
+OA =
+1
+N
+∑
+n
+i = 1
+x
+ii
+(4) 
+F1 =
+2
+n
+∑
+n
+i = 1
+P
+i
+R
+i
+P
+i
++ R
+i
+(5) 
+Fig. 6. Architecture of the CNN sub-module.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+6 
+
+Kappa =
+N
+∑
+n
+i = 1
+x
+ii
+-
+∑
+n
+i = 1
+x
++ i
+x
+i +
+N
+2
+-
+∑
+n
+i = 1
+x
++ i
+x
+i +
+(6) 
+where N and n represent the number of samples and the number of crop 
+types, respectively. x
+ii 
+is the i th diagonal value of the confusion matrix. 
+x
++ i
+and x
+i +
+denote the sum of the predicted samples for class i and the 
+sum of the true samples for class i , respectively. P
+i 
+is the precision of class 
+i and R
+i 
+represents the recall of class i .
+3. Results
+3.1. Ablation experiment
+To validate the effectiveness of the components, we assessed the 
+impact of the ALPE module, CNN sub-module, and Transformer sub- 
+module on the performance of the MCTNet. Specifically, we removed 
+the three modules separately to build three new comparison models, 
+namely MCTNet_noALPE, MCTNet_noCnn, and MCTNet_noTrans. It is 
+worth noting that the MCTNet_noALPE model used the absolute posi -
+tional encoding of the original Transformer. Besides, we also removed 
+the data missing mask of the ALPE to construct MCTNet_noMask to 
+assess its effectiveness.
+Table 4 shows the overall performance of the models in the two study 
+areas. It is clear that the MCTNet outperformed the other models 
+significantly in both regions, illustrating that each module contributes to 
+improving classification performance. In Arkansas, the MCTNet 
+obtained the best performance with 0.968 OA, 0.951 Kappa, and 0.933 
+F1, followed by MCTNet_noMask. The MCTNet_noALPE and MCTNet_ -
+noCnn performed similarly, with an F1 that is approximately 4 % less 
+than that of MCTNet. The MCTNet_noTrans produced the lowest accu -
+racy, indicating that the Transformer sub-module had the greatest 
+impact on the accuracy of the model. In California, the accuracy of the 
+models decreased significantly compared to the results in Arkansas. This 
+may be attributed to the small crop plots and numerous types of crops in 
+California, which increase the difficulty of classification. The MCTNet 
+still exhibited the best performance, followed by the MCTNet_noMask, 
+MCTNet_noALPE, MCTNet_noCnn, and MCTNet_noTrans.
+3.2. Model performance comparison
+The results of the classification accuracy of the nine models in the 
+two regions are displayed in Table 5 . A major finding is that the MCTNet 
+achieved the best performance while the LSTM, SVM, and TAE yielded 
+the worst results in both regions. LSTM relies on sequential data to learn 
+temporal dynamics, but missing data can impact its ability to capture 
+temporal dependencies. SVM is also sensitive to noise and outliers in the 
+dataset ( Sabzekar and Hasheminejad, 2021 ). RF yielded significantly 
+superior accuracy compared to LSTM, SVM, and TAE. This is because RF 
+can exhibit robustness through majority voting with its numerous trees. 
+Apart from the proposed MCTNet, the GL-TAE also performed well in 
+both study areas. This performance can be attributed to the fact that 
+both MCTNet and GL-TAE integrate CNN and self-attention architec -
+tures. Despite their differing self-attention mechanisms, this integration 
+facilitates the advantageous combination of global and local attention, 
+which is critical for effective crop mapping. Generally, the MCTNet 
+outperformed other comparison models remarkably in all metrics.
+To better analyze the classification results of different models, the 
+Table 3 
+The hyperparameters of different models in Arkansas and California.
+Model Hyperparameters 
+candidates
+Arkansas California
+MCTNet n_stage = [1, 2, 3,4,5] 
+n_head = [1,2,5,10] 
+kernel size = [1,3,5] 
+lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+n_stage = 3 
+n_head = 5 
+kernel size = 3 
+lr = 0.001 
+optimizer =
+Adam
+n_stage = 3 
+n_head = 5 
+kernel size = 3 
+lr = 0.001 
+optimizer = Adam
+GL-TAE d
+m 
+= [64,128, 256, 512] 
+n_head = [2,4,8,16,32] 
+lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+d
+m 
+= 256; 
+n_head = 8 
+lr = 0.001 
+optimizer =
+Adam
+d
+m 
+= 256; 
+n_head = 16 
+lr = 0.001 
+optimizer = Adam
+LTAE d
+m 
+= [64,128, 256, 512] 
+n_head = [2,4,8,16,32] 
+lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+d
+m 
+= 256 
+n_head = 8 
+lr = 0.001 
+optimizer =
+Adam
+d
+m 
+= 256 
+n_head = 8 
+lr = 0.001 
+optimizer = Adam
+TAE d
+m 
+= [64,128, 256, 512] 
+n_head = [2,4,8,16,32] 
+lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+d
+m 
+= 128 
+n_head = 4 
+lr = 0.001 
+optimizer =
+Adam
+d
+m 
+= 128 
+n_head = 4 
+lr = 0.001 
+optimizer = Adam
+Transformer d
+m 
+= [64,128, 256, 512] 
+n_head = [2,4,8,16,32] 
+n_layers = [1,2,4,6,8] 
+lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+d
+m 
+= 128 
+n_head = 4 
+n_layers = 2 
+lr = 0.001 
+optimizer =
+Adam
+d
+m 
+= 128 
+n_head = 4 
+n_layers = 2 
+lr = 0.001 
+optimizer = Adam
+Resnet lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+lr = 0.001 
+optimizer =
+Adam
+lr = 0.001 
+optimizer = Adam
+LSTM hidden units =
+[64,128,256,512] 
+lr =
+[0.0001,0.001,0.01,0.1] 
+optimizer = [SGD, Adam]
+hidden units 
+= 256 
+lr = 0.001 
+optimizer =
+Adam
+hidden units = 256 
+lr = 0.001 
+optimizer = Adam
+RF n_estimators =
+[100,200,400] 
+max_depth = [5,10,15,20]
+n_estimators 
+= 200 
+max_depth =
+20
+n_estimators = 200 
+max_depth = 20
+SVM C = [0.5, 1, 1.5, 2, 2.5, 3] 
+kernel = [Linear, RBF]
+C = 1 
+kernel = RBF
+C = 1 
+kernel = RBF
+Table 4 
+Ablation study of the MCTNet with three evaluation metrics.
+Study area Model OA Kappa F1
+Arkansas MCTNet 0.968 0.951 0.933
+MCTNet_noMask 0.943 0.914 0.895
+MCTNet_noALPE 0.938 0.909 0.888
+MCTNet_noCnn 0.938 0.907 0.876
+MCTNet_noTrans 0.925 0.888 0.860
+California MCTNet 0.852 0.806 0.829
+MCTNet_noMask 0.840 0.792 0.822
+MCTNet_noALPE 0.841 0.792 0.810
+MCTNet_noCnn 0.825 0.773 0.792
+MCTNet_noTrans 0.803 0.744 0.784
+Table 5 
+Classification accuracy of different models.
+Study area Model OA Kappa F1
+Arkansas MCTNet 0.968 0.951 0.933
+GL-LTAE 0.952 0.928 0.905
+LTAE 0.941 0.912 0.884
+TAE 0.911 0.869 0.854
+ResNet 0.945 0.917 0.894
+Transformer 0.956 0.934 0.909
+LSTM 0.907 0.862 0.843
+RF 0.936 0.904 0.887
+SVM 0.910 0.867 0.846
+California MCTNet 0.852 0.806 0.829
+GL-LTAE 0.843 0.796 0.820
+LTAE 0.838 0.788 0.805
+TAE 0.787 0.728 0.767
+ResNet 0.837 0.787 0.821
+Transformer 0.813 0.759 0.789
+LSTM 0.799 0.739 0.766
+RF 0.823 0.770 0.793
+SVM 0.786 0.724 0.762
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+7 
+
+normalized confusion matrices are shown in Figs. 7 and 8 . Obviously, 
+the MCTNet exhibited a notably lower rate of misclassifications 
+compared to other methods. In Arkansas, the MCTNet demonstrated 
+superior performance in accurately classifying corn, soybeans, and rice. 
+It is worth noting that the MCTNet generated very high accuracy on corn 
+(0.991 OA) and soybeans (0.990 OA), while the other models tended to 
+misclassify the two crops to different degrees. According to Fig. 2 , the 
+maturity stage of corn is significantly earlier than that of soybeans in 
+Arkansas. The MCTNet may be able to capture this difference, yielding 
+very few misclassified samples for corn and soybeans. Moreover, the 
+other models erroneously classified a large number of rice samples as 
+cotton or others, while the MCTNet maintained a high classification 
+performance. In California, due to the complicated environment and 
+heterogeneous crop categories, the classification accuracy of all models 
+experienced a remarkable decline. Nevertheless, the MCTNet still ach -
+ieved better classification accuracy in almonds and others compared to 
+other models. The broad range of crop types included in others greatly 
+increases the difficulty of classification, while the proposed model still 
+achieved an increase in OA of 5.4 % compared to the GL-TAE.
+The parameter sizes, processing time, and memory of the comparison 
+models are shown in Table 6 . Specifically, we conducted inference and 
+training time evaluations 10 times to ensure a robust comparison, 
+adopting the median values as the final results. The training time covers 
+the whole process of model training, and the inference time is the total 
+time to calculate the results of the testing data with the trained model. 
+The MCTNet has the fewest number of parameters and the lowest 
+memory usage. Compared with the GL-TAE, the MCTNet has nearly half 
+the number of parameters. However, the training and inference time of 
+the MCTNet are not superior to those of other models. This may be due 
+to the sequential stages in MCTNet, which affect the efficiency of par -
+allel computing.
+Fig. 7. Confusion matrices of different models in Arkansas.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+8 
+
+Fig. 8. Confusion matrices of different models in California.
+Table 6 
+The parameter size, processing time, and memory of the crop mapping models.
+Model Arkansas California
+Parameter Size Training (s) Inference (s) Memory (MB) Parameter Size Training (s) Inference (s) Memory (MB)
+MCTNet 55,059 75.261 1.093 0.740 55,140 89.191 1.107 0.740
+GL-TAE 105,289 54.258 0.924 1.306 121,834 70.336 0.967 1.500
+LTAE 95,301 50.799 0.902 1.190 95,334 64.366 0.843 1.191
+TAE 161,605 53.844 0.918 1.960 161,638 67.053 0.957 1.960
+Transformer 1,325,204 88.771 1.106 15.545 1,325,332 103.876 1.198 15.547
+Resnet 2,775,237 73.381 0.953 31.800 2,775,494 88.586 0.974 31.800
+LSTM 276,741 48.514 0.716 3.250 276,998 57.486 0.736 3.250
+RF   1.530 1.239 4.969   2.164 1.267 8.686
+SVM   2.220 1.339 1.917   2.730 1.510 3.026
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+9 
+
+3.3. Crop mapping performance
+The crop mapping results of the models are shown in Fig. 9 and 
+Fig. 10 . It should be noted that TAE, LSTM, and SVM were excluded from 
+mapping due to their inferior accuracy. Residual maps were created to 
+illustrate the distribution of errors and correct classifications, with white 
+for correct classifications and black for errors. For quantitative analysis, 
+the mapping accuracy of each residual map was determined by calcu -
+lating the ratio of correctly classified pixels to the total pixel count, as 
+detailed in Table 7 .
+Table 7 demonstrates that MCTNet exhibited superior performance 
+in the majority of mapping areas, underscoring the effectiveness of the 
+proposed model in practical applications. However, in California ’ s 
+mapping area 2, LTAE surpassed MCTNet. Additionally, in California ’ s 
+mapping area 1, RF achieved greater accuracy compared to GL-TAE and 
+LTAE. These results contrast with the classification accuracy results 
+based on testing data presented in Table 5 . A possible explanation for 
+this discrepancy is the random selection of samples from the CDL. These 
+samples may not be entirely representative of the real situation, leading 
+to differences between the model ’ s performance in actual mapping and 
+on the testing data. A model ’ s excellent performance on the testing data 
+only suggests a higher likelihood of superior performance in actual 
+Fig. 9. Crop maps from (a) MCTNet, (b) GL-TAE, (c) LTAE, (d) ResNet, (e) Transformer, (f) RF in mapping area 1 (1) and mapping area 2 (3) in Arkansas. (2) and (4) 
+represent the residual maps in mapping area 1 and mapping area 2, respectively.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+10 
+
+mapping compared to suboptimal models, but it does not offer a guar -
+anteed assurance of superior performance.
+A detailed analysis of the predicted map of Arkansas ( Fig. 9 ) shows 
+that all models perform well except for the central region of map area 1. 
+However, some pixels that should have been classified as cotton and 
+other crops were inaccurately identified as soybeans. In mapping area 2, 
+where cotton, soybean, and corn are predominant, all models reflected 
+the overall crop distribution pattern. MCTNet demonstrated superior 
+accuracy with fewer misclassifications, particularly in the central area. 
+Fig. 10 demonstrates that the crop fields in California are much smaller 
+Fig. 10. Crop maps from (a) MCTNet, (b) GL-TAE, (c) LTAE, (d) ResNet, (e) Transformer, (f) RF in mapping area 1 (1) and mapping area 2 (3) in California. (2) and 
+(4) represent the residual maps in mapping area 1 and mapping area 2, respectively.
+Table 7 
+The mapping accuracy of different models.
+State Mapping Area MCTNet GL-TAE LTAE ResNet Transformer RF
+Arkansas 1 0.893 0.888 0.883 0.871 0.877 0.875
+2 0.854 0.847 0.850 0.827 0.852 0.811
+California 1 0.897 0.887 0.886 0.872 0.893 0.895
+2 0.873 0.871 0.892 0.851 0.868 0.869
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+11 
+
+and more fragmented than those in Arkansas. In mapping area 1, all 
+predicted maps identified the alfalfa correctly but failed to map the 
+other crops very accurately. Mapping area 2 is planted with many 
+grapes, along with scattered almonds, pistachios, and rice. The mapping 
+results of mapping area 2 were similar to those of mapping area 1, with 
+high recognition accuracy for widely planted crops (grapes) but low 
+accuracy for small-scale crops. Notably, MCTNet yielded fewer errors in 
+certain localized areas. Nonetheless, all models produced more salt-and- 
+pepper errors in California than in Arkansas, which may be attributed to 
+fragmented and heterogeneous landscapes.
+3.4. Cross-temporal performance
+In real applications, it is often impossible to collect training data for 
+specific years, making the evaluation of the transferability and gener -
+alizability of models crucial. To explore cross-temporal performance, we 
+conducted an additional experiment to assess the performance of models 
+across different years. Specifically, we collected 5000 samples from each 
+study area in 2020 and 2022, and tested the performance of models 
+trained on 2021 data using these new datasets. The results, shown in 
+Fig. 11 , indicate that the proposed MCTNet consistently outperforms 
+other models, achieving the highest scores in most scenarios, particu -
+larly in Arkansas 2020 and 2022, and California 2020. Although 
+MCTNet ranks second to RF in California 2022, it remains highly 
+competitive. In contrast, the comparison models exhibit significant 
+performance variations across different scenarios. For example, while 
+the RF model maintains good performance across years in California, it 
+shows inferior performance in Arkansas. This indicates that the pro -
+posed model effectively and precisely captures the temporal patterns of 
+crops, demonstrating superior robustness and stability in handling un -
+seen temporal data.
+4. Discussion
+4.1. Model interpretation
+The results in Section 3 substantiated the efficacy of the MCTNet by 
+leveraging the integration of the CNN and the Transformer to enhance 
+feature extraction capabilities. To further investigate the contribution of 
+the CNN and Transformer sub-modules in the proposed model, the 
+gradient-weighted class activation mapping (Grad-CAM) ( Selvaraju 
+et al., 2017 ) was applied to visualize the extracted features by the sub- 
+modules. Specifically, the Grad-CAM on the last convolutional layer of 
+the CNN sub-module and the last normalized layer of the Transformer 
+sub-module were selected for visualization. To explore the effects of the 
+multiple stages in the MCTNet, the visualization results were also pro -
+duced for each stage.
+Fig. 12 (a1)   (a3) demonstrate the Grad-CAM results of CNN sub- 
+modules using the corn samples in Arkansas. In the spectral dimen -
+sion, the red edge and NIR bands, known to be sensitive to the physio -
+logical state of plants ( Sharifi, 2020 ), exhibit significant importance. In 
+the temporal domain, the features near the 180 DOY obtain more 
+attention. This period corresponds to the tasseling and silking stages of 
+corn, during which the plants undergo significant structural and color 
+changes. From a remote sensing perspective, these developmental stages 
+are characterized by notable alterations in the spectral reflectance of the 
+corn canopy, making them easily detectable. Additionally, as illustrated 
+in Fig. 2 , the occurrence of these stages in corn is significantly earlier 
+compared to other crops. Consequently, the spectral features during 
+these stages are important for crop identification and thus receive 
+heightened attention. Moreover, we found that the important features 
+become more concentrated from the first stage to the last stage. This is 
+because the features learned by deep CNN models exhibit hierarchical 
+characteristics, that is, the shallow layers learn abstract features while 
+the deeper layers learn specific and invariant features that serve for 
+classification ( Zeiler and Fergus, 2013 ). Fig. 12 (c1)   (c3) also shows a 
+gradual concentration phenomenon in California with grape samples. 
+Different from corn, the important features of grapes are a little bit away 
+from the peak value date ( Fig. 2 ). Deep learning models are often viewed 
+as ’ black boxes ’ with limited interpretability, and the optimal combi -
+nation of features might not include the peak date, especially when the 
+peak is not markedly evident. In contrast, the Grad-CAM results of 
+Transformer sub-modules ( Fig. 12 (b1)   (b3) and Fig. 12 (d1)   (d3)) 
+are different from those of the CNN sub-modules. The important features 
+of Transformer sub-modules become more scattered along the temporal 
+domain from the first stage to the last stage. This is because CNN models 
+Fig. 11. Cross-temporal performance of different models ( “ _ ” represents the best model).
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+12 
+
+focus on local features while Transformer models can capture long-range 
+feature dependencies. The Transformer sub-module can classify crops by 
+learning a specific pattern formed by different temporal features. 
+Meanwhile, we observed that the important features extracted by CNN 
+and Transformer sub-modules exhibited certain complementarity, 
+which can theoretically enhance the accuracy of crop classification.
+To further investigate how the extracted features affect the classifi -
+cation, t-SNE ( Van der Maaten and Hinton, 2008 ), a widely used 
+dimensionality reduction approach, was applied to visualize the distri -
+butions of the extracted features of the sub-modules in each stage. 
+Fig. 13 (a1) – Fig. 13 (a3) demonstrates the visualized results of CNN 
+sub-modules in Arkansas for three stages, respectively. Obviously, in the 
+first stages, the distribution of the extracted features is highly concen -
+trated and forms several indistinguishable clusters. In the subsequent 
+stages, these clusters gradually aggregate into a few large groups, with 
+each large group representing a type of crop. The Silhouette scores also 
+prove that the clustering performance becomes better in the latter 
+stages. The visualized plots of Transformer sub-modules are similar to 
+those of the CNN sub-modules. Slightly differently, the Transformer sub- 
+modules form more and smaller clusters in the first stage. Fig. 14 dis -
+plays similar visualized results in California, which further demonstrate 
+the superiority of the multiple stages in improving crop discrimination.
+4.2. The impact of missing data on model performance
+To investigate the impact of varying degrees of missingness in time- 
+series data on model accuracy, we calculated the missing rates for each 
+sample in the testing dataset in Arkansas and then assessed the robust -
+ness of MCTNet and MCTNet_noALPE models using samples with 
+missing rates less than 10 %, 15 %, 20 %, 25 %, 30 %, 35 %, and 40 % 
+respectively. We believe it is important to maintain realistic observa -
+tions, so we did not refer to previous studies ( Wang et al., 2022b; You 
+et al., 2021 ) using linear interpolation and Savitzky-Golay smoothing to 
+process time-series data to eliminate missing values. To verify whether 
+these steps are necessary, we used the data that underwent interpolation 
+and smoothing to generate two new models (named MCTNet1 and 
+MCTNet_noALPE1). The model performance and the distribution of 
+missing rates of data are presented in Fig. 15 . It is obvious that the data 
+with less than 10 % missingness constituted less than 20 % of the total, 
+which implies that the vast majority of the data contained missing values 
+with different rates. As the missing rate increased, the accuracy of all 
+models gradually declined. The MCTNet achieved the best performance 
+at every rate, and its OA decreased slightly, from 0.973 to 0.968. By 
+contrast, the OA of MCTNet_noALPE dropped from 0.963 to 0.950. This 
+demonstrates that MCTNet, owing to the contribution of ALPE, was less 
+sensitive to data missingness than MCTNet_noALPE.
+It is noteworthy that MCTNet significantly outperformed MCTNet1 
+across all missing scenarios, indicating that interpolation and smoothing 
+might alter the original distribution of the data, leading to a reduction in 
+model accuracy. In contrast, the accuracy of MCTNet_noALPE1 was 
+persistently higher than that of MCTNet_noALPE, especially when data 
+missingness is substantial. This discrepancy arose because 
+Fig. 12. Grad-CAM visualization results for (a) corn in Arkansas by CNN sub-module, (b) corn in Arkansas by Transformer sub-module, (c) grape in California by 
+CNN sub-module, (d) grape in California by Transformer sub-module. (1) to (3) represent the tree stages in MCTNet. Yellow color indicates high-weight features, 
+while blue color means low-weight features. (For interpretation of the references to color in this figure legend, the reader is referred to the web version of this article.)
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+13 
+
+Fig. 13. The extracted feature distributions of (a) CNN sub-module, (b) Transformer sub-module from (1) the first stage to (3) the last stage in Arkansas.
+Fig. 14. The extracted feature distributions of (a) CNN sub-module, (b) Transformer sub-module from (1) the first stage to (3) the last stage in California.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+14 
+
+MCTNet_noALPE lacks the ALPE module to discern the locations of 
+missing values. In cases where there are extensive missing values, the 
+model becomes confused and cannot extract valid features to identify 
+crops. The interpolation and smoothing can reduce many missing values 
+and restore the original data distribution to a certain extent, thereby 
+improving the recognition accuracy of the model. Overall, MCTNet is 
+significantly superior to other models, and it does not require interpo -
+lation and smoothing, which can save a lot of calculations.
+We further investigated the different impacts of random and 
+continuous missing data during the growing season on model perfor -
+mance. Specifically, we used corn samples in Arkansas as an example. 
+The growing season of corn is approximately from DOY 120 to DOY 270, 
+as shown in Fig. 2 . We collected all corn samples in Arkansas that had no 
+missing data during this period, totaling 1,361 samples. For each sam -
+ple, we created time series data with missing points by deleting a specific 
+rate of the original data both randomly and consecutively. We then 
+tested the processed samples using MCTNet and MCTNet_noALPE to 
+assess the impacts of different missing conditions on the models ’ 
+performance.
+The results are shown in Fig. 16 . As the missing rate increases, the OA 
+decreases for all models. Notably, random missing data (solid bars) 
+consistently results in higher performance compared to continuous 
+missing data (striped bars). This is because random missing data are 
+spread throughout the growing season, allowing the model to capture 
+some information during critical growth stages. In contrast, continuous 
+missing data creates prolonged gaps, causing the model to miss key 
+phenological information and leading to a greater decline in perfor -
+mance. Additionally, MCTNet consistently outperforms MCTNet_ -
+noALPE across all missing data rates, demonstrating the ALPE module ’ s 
+effectiveness in improving model robustness against missing data.
+To explore the impact of the ALPE in detail, we randomly selected a 
+corn sample and extracted the corresponding attention weight matrices 
+from the MCTNet and MCTNet_noALPE. These matrices are from the 
+first head of the first Transformer sub-module of the models. We used 
+bipartite graphs, a widely used visualization tool for such matrices, to 
+display the attention distribution, where the strength of the attention is 
+indicated by the opacity of the edges and nodes as described by 
+Ru ß wurm and K ¨orner (2020) . Specifically, Fig. 17 (a) plots the time se -
+ries NIR values of the sample, indicating that the period between DOY 
+180 and DOY 300 represents the phenological period of the corn. 
+However, the values for DOY 30, 40, 50, 60, 70, 110 and 360 are 
+missing. Fig. 17 (b) and (c) show the attention distributions of MCTNet 
+and MCTNet_noALPE, respectively. It is worth noting that the attention 
+weights lower than 90 % were filtered out for enhanced clarity. The 
+attention distribution of MCTNet demonstrates that the attentions are 
+focused on the phenological period of the crop and are almost unaffected 
+by the missing values. In contrast, the attention distribution of 
+MCTNet_noALPE is more dispersed, with the attention being attracted 
+Fig. 15. The OA of the crop classification models using samples with different missing rates in Arkansas. (The red curve represents the percentage of the data that is 
+less than a certain missing rate.). (For interpretation of the references to color in this figure legend, the reader is referred to the web version of this article.)
+Fig. 16. Performance of the crop classification models using corn samples with different missing rates during the growing season ( “ random ” denotes random missing 
+data, “ continuous ” denotes continuous missing data).
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+15 
+
+by the missing values. This figure demonstrates the differences in 
+attention distribution, highlighting how the ALPE module adjusts the 
+attention weights to better handle missing data and enhance the model ’ s 
+ability to capture relevant temporal dependencies.
+4.3. Limitations and future work
+Although the proposed model achieved superior performance in crop 
+mapping, there are several limitations for improvement. First, the 
+MCTNet model may produce salt-and-pepper noise in classification re -
+sults. This noise results from pixel-wise decision-making, which can be 
+pronounced in heterogeneous, small, and broken agricultural landscapes 
+(like California ( Fig. 10 )). Further studies will consider the spatial in -
+formation of the input pixel to improve mapping accuracy. For example, 
+as suggested by Interdonato et al. (2019) , incorporating unlabeled pixels 
+surrounding the input pixel in the modeling could enhance performance. 
+Another limitation of our study is the exclusive use of optical data, while 
+recent studies have shown the efficiency of SAR and hyperspectral data 
+in crop monitoring and classification ( Farmonov et al., 2023; Sharifi and 
+Hosseingholizadeh, 2020 ). We plan to integrate multi-modal remote 
+sensing data in future research to enhance the robustness and accuracy 
+of crop type classification. Lastly, although the current study areas cover 
+two U.S. states with unique agricultural characteristics, it remains 
+imperative to explore the performance of the proposed model in various 
+other countries and regions.
+5. Conclusions
+This study proposed a lightweight CNN-Transformer network 
+MCTNet for pixel-based crop mapping using time-series Sentinel-2 im -
+ages. MCTNet effectively harnesses the advantages of both CNN and 
+Transformer to obtain a comprehensive representation of crop growth 
+patterns. Compared with eight advanced models, the MCTNet exhibited 
+better performance in most crop classification cases with the fewest 
+number of parameters. The evaluation of the impact of data missing on 
+the models demonstrated that the proposed ALPE made the MCTNet less 
+sensitive to the missing values and achieved superior performance 
+without data interpolation and smoothing. Moreover, MCTNet achieved 
+superior performance in cross-temporal scenarios, indicating its high 
+potential in practical applications. Further work aims to improve the 
+model ’ s productivity and generalizability across different regions.
+CRediT authorship contribution statement
+Yumiao Wang: Writing – original draft, Methodology, Funding 
+acquisition, Conceptualization. Luwei Feng: Writing – review & editing, 
+Methodology, Funding acquisition, Formal analysis. Weiwei Sun: Re -
+sources, Funding acquisition, Conceptualization. Lihua Wang: Investi -
+gation, Formal analysis, Data curation. Gang Yang: Visualization, 
+Software, Funding acquisition. Binjie Chen: Writing – review & editing, 
+Formal analysis.
+Declaration of competing interest
+The authors declare that they have no known competing financial 
+interests or personal relationships that could have appeared to influence 
+the work reported in this paper.
+Data availability
+Data will be made available on request.
+Acknowledgements
+This work was supported by the National Natural Science Foundation 
+of China (No. 42201354, No. 42271340), the Zhejiang Provincial Nat -
+ural Science Foundation of China (No. LQ22D010007), the Public Pro -
+jects of Ningbo City (No. 2022S101, No. 2023S102), the Ningbo Science 
+and Technology Innovation 2025 Major Special Project (No. 2021Z107, 
+No. 2022Z032), the China Postdoctoral Science Foundation 
+(2023M742679).
+Fig. 17. Visual illustration of the attention weights from the MCTNet and MCTNet_noALPE.
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+16 
+
+References
+Achanccaray, P., Feitosa, R.Q., Rottensteiner, F., Sanches, I.D., Heipke, C., 2017. Spatial- 
+temporal conditional random field based model for crop recognition in tropical 
+regions. 2017 IEEE Int. Geosci. Remote Sens. Sympos. (IGARSS) IEEE 3007 – 3010 .
+Asad, M.H., Bais, A., 2020. Weed detection in canola fields using maximum likelihood 
+classification and deep convolutional neural network. Inform. Process. Agric. 7, 
+535 – 545 .
+Ashourloo, D., Shahrabi, H.S., Azadbakht, M., Aghighi, H., Nematollahi, H., 
+Alimohammadi, A., Matkan, A.A., 2019. Automatic canola mapping using time series 
+of sentinel 2 images. ISPRS J. Photogramm. Remote Sens. 156, 63 – 76 .
+Bargiel, D., 2017. A new method for crop classification combining time series of radar 
+images and crop phenology information. Remote Sens. Environ. 198, 369 – 383 .
+Blickensd ¨orfer, L., Schwieder, M., Pflugmacher, D., Nendel, C., Erasmi, S., Hostert, P., 
+2022. Mapping of crop types and crop sequences with combined time series of 
+Sentinel-1, Sentinel-2 and Landsat 8 data for Germany. Remote Sens. Environ. 269, 
+112831 .
+Boryan, C., Yang, Z., Mueller, R., Craig, M., 2011. Monitoring US agriculture: the US 
+department of agriculture, national agricultural statistics service, cropland data layer 
+program. Geocarto Int. 26, 341 – 358 .
+Chen, H., Li, H., Liu, Z., Zhang, C., Zhang, S., Atkinson, P.M., 2023. A novel Greenness 
+and Water Content Composite Index (GWCCI) for soybean mapping from single 
+remotely sensed multispectral images. Remote Sens. Environ. 295, 113679 .
+Farmonov, N., Amankulova, K., Szatm ´ari, J., Sharifi, A., Abbasi-Moghadam, D., Nejad, S. 
+M.M., Mucsi, L., 2023. Crop type classification by DESIS hyperspectral imagery and 
+machine learning algorithms. IEEE J. Sel. Top. Appl. Earth Obs. Remote Sens. 16, 
+1576 – 1588 .
+Feng, F., Gao, M., Liu, R., Yao, S., Yang, G., 2023. A deep learning framework for crop 
+mapping with reconstructed Sentinel-2 time series images. Comput. Electron. Agric. 
+213, 108227 .
+Feng, S., Zhao, J., Liu, T., Zhang, H., Zhang, Z., Guo, X., 2019. Crop type identification 
+and mapping using machine learning algorithms and Sentinel-2 time series data. 
+IEEE J. Sel. Top. Appl. Earth Obs. Remote Sens. 12, 3295 – 3306 .
+Garnot, V.S.F., Landrieu, L., 2020. Lightweight temporal self-attention for classifying 
+satellite images time series, Advanced Analytics and Learning on Temporal Data: 5th 
+ECML PKDD Workshop, AALTD 2020, Ghent, Belgium, September 18, 2020, Revised 
+Selected Papers 6. Springer, pp. 171-181.
+Garnot, V.S.F., Landrieu, L., Giordano, S., Chehata, N., 2020. Satellite image time series 
+classification with pixel-set encoders and temporal self-attention, Proceedings of the 
+IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 12325- 
+12334.
+Huang, Y., Qiu, B., Chen, C., Zhu, X., Wu, W., Jiang, F., Lin, D., Peng, Y., 2022. 
+Automated soybean mapping based on canopy water content and chlorophyll 
+content using Sentinel-2 images. Int. J. Appl. Earth Obs. Geoinf. 109, 102801 .
+Inglada, J., Vincent, A., Arias, M., Tardy, B., Morin, D., Rodes, I., 2017. Operational high 
+resolution land cover map production at the country scale using satellite image time 
+series. Remote Sens. (Basel) 9, 95 .
+Interdonato, R., Ienco, D., Gaetano, R., Ose, K., 2019. DuPLO: A DUal view point deep 
+learning architecture for time series classificatiOn. ISPRS J. Photogramm. Remote 
+Sens. 149, 91 – 104 .
+Li, Z., Chen, G., Zhang, T., 2020. A CNN-transformer hybrid approach for crop 
+classification using multitemporal multisensor images. IEEE J. Sel. Top. Appl. Earth 
+Obs. Remote Sens. 13, 847 – 858 .
+Liu, M., Chai, Z., Deng, H., Liu, R., 2022. A CNN-transformer network with multiscale 
+context aggregation for fine-grained cropland change detection. IEEE J. Sel. Top. 
+Appl. Earth Obs. Remote Sens. 15, 4297 – 4306 .
+Maponya, M.G., van Niekerk, A., Mashimbye, Z.E., 2020. Pre-harvest classification of 
+crop types using a Sentinel-2 time-series and machine learning. Comput. Electron. 
+Agric. 169, 105164 .
+Martin, E.R., Godwin, I.A., Cooper, R.I., Aryal, N., Reba, M.L., Bouldin, J.L., 2021. 
+Assessing the impact of vegetative cover within Northeast Arkansas agricultural 
+ditches on sediment and nutrient loads. Agr Ecosyst Environ 320, 107613 .
+Niu, B., Feng, Q., Chen, B., Ou, C., Liu, Y., Yang, J., 2022. HSI-TransUNet: A transformer 
+based semantic segmentation model for crop mapping from UAV hyperspectral 
+imagery. Comput. Electron. Agric. 201, 107297 .
+Qiu, B., Huang, Y., Chen, C., Tang, Z., Zou, F., 2018. Mapping spatiotemporal dynamics 
+of maize in China from 2005 to 2017 through designing leaf moisture based 
+indicator from normalized multi-band drought index. Comput. Electron. Agric. 153, 
+82 – 93 .
+Ru ß wurm, M., K ¨orner, M., 2020. Self-attention for raw optical satellite time series 
+classification. ISPRS J. Photogramm. Remote Sens. 169, 421 – 435 .
+Sabzekar, M., Hasheminejad, S.M.H., 2021. Robust regression using support vector 
+regressions. Chaos Solitons Fractals 144, 110738 .
+Schmidhuber, J., 2015. Deep learning in neural networks: an overview. Neural Netw. 61, 
+85 – 117 .
+Selvaraju, R.R., Cogswell, M., Das, A., Vedantam, R., Parikh, D., Batra, D., 2017. Grad- 
+cam: Visual explanations from deep networks via gradient-based localization. In: 
+Proceedings of the IEEE international conference on computer vision, pp. 618-626.
+Sharifi, A., 2020. Remotely sensed vegetation indices for crop nutrition mapping. J. Sci. 
+Food Agric. 100, 5191 – 5196 .
+Sharifi, A., Hosseingholizadeh, M., 2020. Application of sentinel-1 data to estimate 
+height and biomass of rice crop in Astaneh-ye Ashrafiyeh, Iran. J. Ind. Soc. Remote 
+Sens. 48, 11 – 19 .
+Sun, Z., Di, L., Fang, H., 2019. Using long short-term memory recurrent neural network 
+in land cover classification on Landsat and Cropland data layer time series. Int. J. 
+Remote Sens. 40, 593 – 614 .
+Tang, P., Chanussot, J., Guo, S., Zhang, W., Qie, L., Zhang, P., Fang, H., Du, P., 2024. 
+Deep learning with multi-scale temporal hybrid structure for robust crop mapping. 
+ISPRS J. Photogramm. Remote Sens. 209, 117 – 132 .
+Van der Maaten, L., Hinton, G., 2008. Visualizing data using t-SNE. J. Mach. Learn. Res. 
+9 .
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, Ł ., 
+Polosukhin, I., 2017. Attention is all you need. Adv. Neural Inf. Proces. Syst. 30 .
+Wang, H., Chen, X., Zhang, T., Xu, Z., Li, J., 2022a. CCTNet: coupled CNN and 
+transformer network for crop segmentation of remote sensing images. Remote Sens. 
+(Basel) 14, 1956 .
+Wang, Q., Wu, B., Zhu, P., Li, P., Zuo, W., Hu, Q., 2020. ECA-Net: Efficient channel 
+attention for deep convolutional neural networks. In: Proceedings of the IEEE/CVF 
+conference on computer vision and pattern recognition, pp. 11534-11542.
+Wang, Y., Feng, L., Sun, W., Zhang, Z., Zhang, H., Yang, G., Meng, X., 2022b. Exploring 
+the potential of multi-source unsupervised domain adaptation in crop mapping using 
+Sentinel-2 images. Gisci. Remote Sens. 59, 2247 – 2265 .
+Xiang, J., Liu, J., Chen, D., Xiong, Q., Deng, C., 2023. CTFuseNet: a multi-scale CNN- 
+transformer feature fused network for crop type segmentation on UAV remote 
+sensing imagery. Remote Sens. (Basel) 15, 1151 .
+Xu, J., Zhu, Y., Zhong, R., Lin, Z., Xu, J., Jiang, H., Huang, J., Li, H., Lin, T., 2020. 
+DeepCropMapping: a multi-temporal deep learning approach with improved spatial 
+generalizability for dynamic corn and soybean mapping. Remote Sens. Environ. 247, 
+111946 .
+You, N., Dong, J., Huang, J., Du, G., Zhang, G., He, Y., Yang, T., Di, Y., Xiao, X., 2021. 
+The 10-m crop type maps in Northeast China during 2017 – 2019. Sci. Data 8, 41 .
+Yuan, Y., Lin, L., 2021. Self-supervised pretraining of transformers for satellite image 
+time series classification. IEEE J. Sel. Top. Appl. Earth Obs. Remote Sens. 14, 
+474 – 487 .
+Yuan, Y., Lin, L., Liu, Q., Hang, R., Zhou, Z.-G., 2022. SITS-former: a pre-trained spatio- 
+spectral-temporal representation model for Sentinel-2 time series classification. Int. 
+J. Appl. Earth Obs. Geoinf. 106, 102651 .
+Zeiler, M.D., Fergus, R., 2013. Visualizing and Understanding Convolutional Networks. 
+arXiv.
+Zhang, W., Zhang, H., Zhao, Z., Tang, P., Zhang, Z., 2023. Attention to both global and 
+local features: a novel temporal encoder for satellite image time series classification. 
+Remote Sens. (Basel) 15, 618 .
+Zhong, L., Hawkins, T., Biging, G., Gong, P., 2011. A phenology-based approach to map 
+crop types in the San Joaquin Valley, California. Int. J. Remote Sens. 32, 7777 – 7804 .
+Zhong, L., Hu, L., Zhou, H., 2019. Deep learning based multi-temporal crop classification. 
+Remote Sens. Environ. 221, 430 – 443 .
+Y. Wang et al.                                                                                                                                                                                                                                   Computers and Electronics in Agriculture 226 (2024) 109370 
+17 
