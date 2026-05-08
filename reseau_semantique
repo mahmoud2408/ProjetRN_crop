@@ -1,0 +1,9 @@
+// Reseau Semantique
+digraph {
+	Animal -> Air [label=respire color=blue]
+	Oiseau -> Animal [label=is_a color=red]
+	Oiseau -> Oui [label=vole color=blue]
+	Canari -> Oiseau [label=is_a color=red]
+	Autruche -> Oiseau [label=is_a color=red]
+	Autruche -> Non [label=vole color=blue]
+}
